@@ -1,7 +1,8 @@
-Flask==3.0.2
-cloudinary==1.38.0
-Pillow==10.2.0
-opencv-python-headless==4.9.0.80
-requests==2.31.0
-gunicorn==21.2.0
-numpy==1.26.4
+Flask
+cloudinary
+Pillow
+opencv-python-headless
+requests
+gunicorn
+numpy
+
