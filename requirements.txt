@@ -2,6 +2,7 @@ Flask
 cloudinary
 Pillow
 opencv-python-headless
+easyocr
 requests
 gunicorn
 numpy
