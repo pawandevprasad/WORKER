@@ -3,120 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cloudinary Auto Patch Remover</title>
+    <title>AI Automatic Watermark Remover</title>
     <style>
-        body { font-family: 'Segoe UI', Roboto, sans-serif; background: #f1f5f9; margin: 0; padding: 15px; }
-        .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-        h2 { margin-top: 0; color: #0f172a; }
-        .grid { display: grid; grid-template-columns: 280px 1fr; gap: 20px; }
-        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
-        .panel { background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }
-        .form-group { margin-bottom: 12px; }
-        label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px; color: #334155; }
-        input { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; box-sizing: border-box; }
-        .btn { width: 100%; padding: 10px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: white; margin-top: 5px; }
-        .btn-primary { background: #2563eb; }
-        .btn-success { background: #16a34a; }
-        .status { padding: 10px; background: #e0f2fe; color: #0369a1; border-radius: 6px; margin-bottom: 15px; display: none; }
-        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; max-height: 500px; overflow-y: auto; padding: 5px; border: 1px solid #e2e8f0; border-radius: 6px; }
-        .card { border: 1px solid #e2e8f0; padding: 6px; text-align: center; border-radius: 6px; background: white; }
-        .card img { width: 100%; height: 100px; object-fit: cover; border-radius: 4px; }
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; margin: 0; padding: 20px; text-align: center; }
+        .box { max-width: 500px; margin: 40px auto; background: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); border: 1px solid #334155; }
+        h1 { font-size: 22px; color: #38bdf8; margin-bottom: 20px; }
+        input { width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: white; font-size: 16px; box-sizing: border-box; margin-bottom: 20px; }
+        .btn { width: 100%; background: #2563eb; color: white; border: none; padding: 14px; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .btn:hover { background: #1d4ed8; }
+        .status { margin-top: 20px; padding: 12px; border-radius: 6px; background: #0284c7; font-size: 14px; display: none; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h2>Cloudinary Auto Patch Remover</h2>
+<div class="box">
+    <h1>AI Auto Watermark Remover</h1>
+    <p style="font-size:13px; color:#94a3b8;">No coordinates needed. Auto-scans full account images.</p>
+    
+    <label style="display:block; text-align:left; font-size:12px; margin-bottom:5px; color:#cbd5e1;">Target Watermark Text:</label>
+    <input type="text" id="targetText" value="EstateX">
+
+    <button class="btn" id="startBtn" onclick="processAllAuto()">Start AI Bulk Cleaning</button>
     <div id="status" class="status"></div>
-
-    <div class="grid">
-        <div class="panel">
-            <h3>White Patch Area (%):</h3>
-            <div class="form-group">
-                <label>X Start (%):</label>
-                <input type="number" id="x_pct" value="0">
-            </div>
-            <div class="form-group">
-                <label>Y Start (%):</label>
-                <input type="number" id="y_pct" value="0">
-            </div>
-            <div class="form-group">
-                <label>Width (%):</label>
-                <input type="number" id="w_pct" value="35">
-            </div>
-            <div class="form-group">
-                <label>Height (%):</label>
-                <input type="number" id="h_pct" value="25">
-            </div>
-            <button class="btn btn-success" onclick="cleanAll()">Saari Images Clean Karein</button>
-        </div>
-
-        <div>
-            <h3>Images List</h3>
-            <div id="gallery" class="gallery">Loading images...</div>
-        </div>
-    </div>
 </div>
 
 <script>
-    function showStatus(msg) {
-        const s = document.getElementById('status');
-        s.innerText = msg;
-        s.style.display = 'block';
-    }
+    async function processAllAuto() {
+        const textVal = document.getElementById('targetText').value;
+        const btn = document.getElementById('startBtn');
+        const status = document.getElementById('status');
 
-    function getFormValues() {
-        return {
-            x_pct: document.getElementById('x_pct').value,
-            y_pct: document.getElementById('y_pct').value,
-            w_pct: document.getElementById('w_pct').value,
-            h_pct: document.getElementById('h_pct').value
-        };
-    }
+        if(!confirm(`Kya aap Cloudinary ke saare images me se '${textVal}' watermark auto-remove karna chahte hain?`)) return;
 
-    async function loadImages() {
-        const res = await fetch('/api/resources');
-        const data = await res.json();
-        const gallery = document.getElementById('gallery');
-        gallery.innerHTML = '';
-        if(data.success) {
-            data.resources.forEach(img => {
-                gallery.innerHTML += `
-                    <div class="card">
-                        <img src="${img.secure_url}?t=${new Date().getTime()}">
-                        <button class="btn btn-primary" style="font-size:11px; padding:5px;" onclick="cleanSingle('${img.public_id}')">Clean This</button>
-                    </div>
-                `;
+        btn.disabled = true;
+        btn.innerText = "AI Processing Images... Please Wait";
+        status.style.display = "block";
+        status.innerText = "AI scanning and inpainting all images in your Cloudinary account...";
+
+        try {
+            const res = await fetch('/api/clean-all-auto', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ target_text: textVal })
             });
+
+            const data = await res.json();
+            if(data.success) {
+                status.innerText = data.message;
+            } else {
+                status.innerText = "Error: " + data.error;
+            }
+        } catch(e) {
+            status.innerText = "Processing error occurred.";
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Start AI Bulk Cleaning";
         }
     }
-
-    async function cleanSingle(publicId) {
-        showStatus('Cleaning White Patch...');
-        const res = await fetch('/api/clean-image', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ public_id: publicId, ...getFormValues() })
-        });
-        const data = await res.json();
-        if(data.success) { showStatus('Cleaned!'); loadImages(); }
-        else { showStatus('Error: ' + data.error); }
-    }
-
-    async function cleanAll() {
-        if(!confirm("Kya aap saari images se White Patch mita kar restore karna chahte hain?")) return;
-        showStatus('Saari images se white patch hataya jaa raha hai, thoda wait karein...');
-        const res = await fetch('/api/clean-all', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(getFormValues())
-        });
-        const data = await res.json();
-        if(data.success) { showStatus(data.message); loadImages(); }
-        else { showStatus('Error: ' + data.error); }
-    }
-
-    window.onload = loadImages;
 </script>
 </body>
 </html>
