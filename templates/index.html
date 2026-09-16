@@ -8,59 +8,76 @@
         body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; margin: 0; padding: 20px; text-align: center; }
         .box { max-width: 500px; margin: 40px auto; background: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); border: 1px solid #334155; }
         h1 { font-size: 22px; color: #38bdf8; margin-bottom: 20px; }
-        input { width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: white; font-size: 16px; box-sizing: border-box; margin-bottom: 20px; }
         .btn { width: 100%; background: #2563eb; color: white; border: none; padding: 14px; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; }
         .btn:hover { background: #1d4ed8; }
-        .status { margin-top: 20px; padding: 12px; border-radius: 6px; background: #0284c7; font-size: 14px; display: none; }
+        .status { margin-top: 20px; padding: 12px; border-radius: 6px; background: #0284c7; font-size: 14px; display: none; word-break: break-all; }
     </style>
 </head>
 <body>
 
 <div class="box">
     <h1>AI Auto Watermark Remover</h1>
-    <p style="font-size:13px; color:#94a3b8;">No coordinates needed. Auto-scans full account images.</p>
-    
-    <label style="display:block; text-align:left; font-size:12px; margin-bottom:5px; color:#cbd5e1;">Target Watermark Text:</label>
-    <input type="text" id="targetText" value="EstateX">
+    <p style="font-size:13px; color:#94a3b8;">Full Account Batch Processing (No Timeouts)</p>
 
-    <button class="btn" id="startBtn" onclick="processAllAuto()">Start AI Bulk Cleaning</button>
+    <button class="btn" id="startBtn" onclick="startBatchProcessing()">Start AI Bulk Cleaning</button>
     <div id="status" class="status"></div>
 </div>
 
 <script>
-    async function processAllAuto() {
-        const textVal = document.getElementById('targetText').value;
-        const btn = document.getElementById('startBtn');
+    let totalProcessed = 0;
+
+    async function processBatch(nextCursor = null) {
         const status = document.getElementById('status');
-
-        if(!confirm(`Kya aap Cloudinary ke saare images me se '${textVal}' watermark auto-remove karna chahte hain?`)) return;
-
-        btn.disabled = true;
-        btn.innerText = "AI Processing Images... Please Wait";
-        status.style.display = "block";
-        status.innerText = "AI scanning and inpainting all images in your Cloudinary account...";
-
+        
         try {
-            const res = await fetch('/api/clean-all-auto', {
+            const res = await fetch('/api/clean-batch', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ target_text: textVal })
+                body: JSON.stringify({ next_cursor: nextCursor })
             });
 
             const data = await res.json();
+            
             if(data.success) {
-                status.innerText = data.message;
+                totalProcessed += data.processed_count;
+                status.innerText = `Processing... Total Cleaned: ${totalProcessed} images.`;
+
+                if(!data.is_complete && data.next_cursor) {
+                    // Loop to next batch
+                    processBatch(data.next_cursor);
+                } else {
+                    status.style.background = "#16a34a";
+                    status.innerText = `Kamyabi! Account ki sabhi (${totalProcessed}) images clean ho gayi hain!`;
+                    document.getElementById('startBtn').disabled = false;
+                    document.getElementById('startBtn').innerText = "Start AI Bulk Cleaning";
+                }
             } else {
+                status.style.background = "#dc2626";
                 status.innerText = "Error: " + data.error;
+                document.getElementById('startBtn').disabled = false;
             }
         } catch(e) {
-            status.innerText = "Processing error occurred.";
-        } finally {
-            btn.disabled = false;
-            btn.innerText = "Start AI Bulk Cleaning";
+            status.style.background = "#dc2626";
+            status.innerText = "Network / Connection error occurred.";
+            document.getElementById('startBtn').disabled = false;
         }
+    }
+
+    function startBatchProcessing() {
+        if(!confirm("Kya aap Cloudinary ke saare images clean karna chahte hain?")) return;
+
+        totalProcessed = 0;
+        const btn = document.getElementById('startBtn');
+        const status = document.getElementById('status');
+
+        btn.disabled = true;
+        btn.innerText = "Processing Batches...";
+        status.style.display = "block";
+        status.style.background = "#0284c7";
+        status.innerText = "Scanning & Cleaning images in batches...";
+
+        processBatch(null);
     }
 </script>
 </body>
 </html>
-
