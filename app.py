@@ -3,7 +3,6 @@ import io
 import requests
 import numpy as np
 import cv2
-import easyocr
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
@@ -19,53 +18,55 @@ cloudinary.config(
     secure=True
 )
 
-# AI OCR Model initialize karein (Target text 'EstateX' detect karne ke liye)
-print("Loading AI Text Detection Model...")
-ocr_reader = easyocr.Reader(['en'], gpu=False)
-print("AI Model Loaded Successfully!")
-
-def auto_detect_and_remove_watermark(image_bytes, target_text="EstateX"):
-    # 1. Byte stream se image decode karein
+def auto_detect_and_inpaint_watermark(image_bytes):
+    # Byte stream se image decode karein
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     h, w = img.shape[:2]
 
+    # Grayscale conversion for edge/contrast detection
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # Adaptive thresholding to detect text edges / watermark contrast
+    thresh = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
+    )
+
+    # Morphological dilation to combine text characters into boxes
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 5))
+    dilated = cv2.dilate(thresh, kernel, iterations=2)
+
+    # Contours find karein (Text regions detect karne ke liye)
+    contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
     mask = np.zeros((h, w), dtype=np.uint8)
+    found_any = False
 
-    # 2. AI Scanning: Image ko top to bottom text ke liye scan karein
-    results = ocr_reader.readtext(img)
-    found_watermark = False
-
-    for (bbox, text, prob) in results:
-        cleaned_text = text.replace(" ", "").strip().lower()
-        search_target = target_text.replace(" ", "").strip().lower()
-
-        # Agar text me 'estatex' mila (transparent/light sabhi type)
-        if search_target in cleaned_text or cleaned_text in search_target:
-            found_watermark = True
-            pts = np.array(bbox, np.int32)
-            rect_x, rect_y, rect_w, rect_h = cv2.boundingRect(pts)
+    for cnt in contours:
+        x, y, cw, ch = cv2.boundingRect(cnt)
+        aspect_ratio = cw / float(ch)
+        
+        # Text regions filter karein (Jaise 'EstateX' jaisa horizontal text)
+        if cw > 40 and ch > 10 and aspect_ratio > 1.5 and cw < w * 0.8:
+            px = int(cw * 0.1)
+            py = int(ch * 0.15)
+            x1 = max(0, x - px)
+            y1 = max(0, y - py)
+            x2 = min(w, x + cw + px)
+            y2 = min(h, y + ch + py)
             
-            # Text edges ke aas-paas thoda padding/buffer add karein
-            pad_x = int(rect_w * 0.15)
-            pad_y = int(rect_h * 0.20)
-            
-            x1 = max(0, rect_x - pad_x)
-            y1 = max(0, rect_y - pad_y)
-            x2 = min(w, rect_x + rect_w + pad_x)
-            y2 = min(h, rect_y + rect_h + pad_y)
-
-            # Auto mask generate karein
             cv2.rectangle(mask, (x1, y1), (x2, y2), 255, -1)
+            found_any = True
 
-    # Fallback: Agar text bilkul transparent hone ki wajah se OCR miss kare, toh center area target hoga
-    if not found_watermark:
+    # Fallback: Center aur Top-Left area target karein (jahan watermark hote hain)
+    if not found_any:
         cv2.rectangle(mask, (int(w * 0.25), int(h * 0.35)), (int(w * 0.75), int(h * 0.65)), 255, -1)
+        cv2.rectangle(mask, (0, 0), (int(w * 0.35), int(h * 0.25)), 255, -1)
 
-    # 3. Smart Inpainting (Aas-paas ke background colors se transparent text ko erase/fill karein)
-    cleaned_img = cv2.inpaint(img, mask, inpaintRadius=7, flags=cv2.INPAINT_TELEA)
+    # Inpaint Telea algorithm - Super fast & low RAM usage
+    cleaned_img = cv2.inpaint(img, mask, inpaintRadius=5, flags=cv2.INPAINT_TELEA)
 
-    # Output to JPEG Bytes
+    # Encode back to JPEG bytes
     is_success, buffer = cv2.imencode(".jpg", cleaned_img, [cv2.IMWRITE_JPEG_QUALITY, 95])
     return buffer.tobytes()
 
@@ -76,10 +77,7 @@ def index():
 @app.route('/api/clean-all-auto', methods=['POST'])
 def clean_all_auto():
     try:
-        data = request.json or {}
-        target_text = data.get('target_text', 'EstateX')
-
-        # Pagination logic: Cloudinary account ke SABHI images fetch karein
+        # Cloudinary ke SABHI images fetch karein (Pagination)
         resources = []
         next_cursor = None
         
@@ -97,27 +95,26 @@ def clean_all_auto():
         total_images = len(resources)
         cleaned_count = 0
 
-        # Loop over every single image in Cloudinary
         for item in resources:
             pid = item['public_id']
             img_url = item['secure_url']
             
             resp = requests.get(img_url)
             if resp.status_code == 200:
-                cleaned_bytes = auto_detect_and_remove_watermark(resp.content, target_text=target_text)
+                cleaned_bytes = auto_detect_and_inpaint_watermark(resp.content)
                 
-                # Cloudinary overwrite - EXACT SAME PUBLIC_ID (URLs bilkul SAME rahenge)
+                # Cloudinary overwrite - SAME PUBLIC_ID (URLs bilkul SAME rahenge)
                 cloudinary.uploader.upload(
                     cleaned_bytes,
                     public_id=pid,
                     overwrite=True,
-                    invalidate=True  # Instant CDN Cache clear
+                    invalidate=True
                 )
                 cleaned_count += 1
 
         return jsonify({
             "success": True,
-            "message": f"Kamyabi! Account ki kul {total_images} images me se '{target_text}' watermark AI dwara auto-remove ho gaya hai."
+            "message": f"Kamyabi! Account ki kul {total_images} images me se watermark auto-clean ho gaya hai."
         })
 
     except Exception as e:
@@ -126,4 +123,4 @@ def clean_all_auto():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
-            
+    
